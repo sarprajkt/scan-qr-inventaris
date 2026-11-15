@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#172544">
+  <title>Scan QR Inventaris | SMK Telkom Jakarta</title>
+  <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+  <style>
+    :root{color-scheme:dark;--navy:#111b35;--panel:#202f52;--panel2:#172541;--cyan:#00c6ce;--text:#f2f6ff;--muted:#b7c5df;--line:#405477;--red:#ff626c;--green:#42d6a0}
+    *{box-sizing:border-box}
+    body{margin:0;background:linear-gradient(135deg,#101a33,#1b2d50);color:var(--text);font:16px system-ui,-apple-system,"Segoe UI",Arial,sans-serif}
+    main{width:min(920px,100%);margin:0 auto;padding:18px 14px 40px}
+    .brand{display:flex;align-items:center;gap:13px;margin:8px 0 18px}
+    .brand-mark{width:48px;height:48px;border-radius:13px;background:#fff;color:#172544;display:grid;place-items:center;font-size:24px;font-weight:900}
+    h1{font-size:clamp(21px,4vw,29px);margin:0}
+    .sub{color:var(--muted);margin:3px 0 0;font-size:14px}
+    .card{background:var(--panel);border:1px solid var(--line);border-radius:17px;padding:clamp(15px,3vw,24px);margin:14px 0;box-shadow:0 12px 28px #0002}
+    h2{font-size:19px;margin:0 0 12px}
+    p{color:var(--muted);line-height:1.55}
+    .actions{display:flex;gap:9px;flex-wrap:wrap}
+    button{border:0;border-radius:11px;padding:14px 18px;font-size:15px;font-weight:750;cursor:pointer;min-height:48px}
+    button:disabled{opacity:.55;cursor:not-allowed}
+    .primary{background:var(--cyan);color:#062433}
+    .secondary{background:#3a4e70;color:#fff;border:1px solid #5a7095}
+    label{display:block;font-weight:700;margin:18px 0 7px}
+    input{width:100%;padding:15px;border-radius:11px;border:1px solid var(--line);background:var(--panel2);color:#fff;font-size:16px;outline:none}
+    input:focus{border-color:var(--cyan);box-shadow:0 0 0 3px #00c6ce22}
+    .search-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:9px}
+    #reader{width:min(100%,520px);margin:16px auto 6px;border-radius:13px;overflow:hidden;background:#fff;min-height:0}
+    #reader:empty{display:none}
+    #status{margin-top:14px;padding:13px 14px;border-radius:11px;background:#14233f;color:#dce8ff;white-space:pre-wrap;line-height:1.5;overflow-wrap:anywhere}
+    #status.error{color:#ff858b;border:1px solid #a83f50}
+    #status.ok{color:#77e7bb;border:1px solid #287d68}
+    .hint{font-size:13px;color:var(--muted)}
+    #result[hidden]{display:none}
+    .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,235px),1fr));gap:10px}
+    .field{background:#192947;border:1px solid var(--line);padding:12px;border-radius:10px;min-width:0;overflow-wrap:anywhere}
+    .field small{display:block;color:var(--muted);margin-bottom:6px;font-size:12px}
+    .field strong{font-weight:650;white-space:pre-wrap}
+    .field a{color:#79e8ef}
+    .photo{max-width:100%;max-height:360px;object-fit:contain;border-radius:10px;margin-top:8px}
+    footer{text-align:center;color:var(--muted);font-size:12px;padding:14px 5px}
+    @media(max-width:560px){main{padding:12px 10px 28px}.search-row{grid-template-columns:1fr}.actions button{flex:1}.card{border-radius:14px}}
+  </style>
+</head>
+<body>
+<main>
+  <header class="brand">
+    <div class="brand-mark" aria-hidden="true">TS</div>
+    <div>
+      <h1>Scan QR Inventaris</h1>
+      <div class="sub">SMK Telkom Jakarta · Sistem Inventaris Barang</div>
+    </div>
+  </header>
+
+  <section class="card">
+    <h2>Pindai label QR barang</h2>
+    <p>Tekan Mulai Scan QR, izinkan akses kamera, lalu arahkan kamera belakang ke label barang.</p>
+    <div class="actions">
+      <button class="primary" id="startBtn" type="button">▣ Mulai Scan QR</button>
+      <button class="secondary" id="stopBtn" type="button">◧ Hentikan Kamera</button>
+    </div>
+    <div id="reader"></div>
+
+    <label for="code">Atau masukkan 29 digit Kode Label Barang</label>
+    <div class="search-row">
+      <input id="code" inputmode="numeric" autocomplete="off" maxlength="29" placeholder="Masukkan / tempel kode QR 29 digit">
+      <button class="primary" id="searchBtn" type="button">⌕ Cari Rincian Barang</button>
+    </div>
+    <div id="status" role="status" aria-live="polite">Siap. Halaman ini harus dibuka melalui HTTPS agar kamera dapat digunakan.</div>
+    <p class="hint">Jika kamera tidak tersedia, masukkan 29 digit kode label secara manual.</p>
+  </section>
+
+  <section class="card" id="result" hidden>
+    <h2>Rincian Inventaris Barang</h2>
+    <div id="details" class="grid"></div>
+  </section>
+  <footer>Halaman Scan QR mandiri · Data dibaca dari Google Spreadsheet InventarisRuangan.</footer>
+</main>
+
+<script>
+  // WAJIB DIISI dengan URL Web App Google Apps Script yang berakhiran /exec.
+  const GAS_API_URL = "TEMPEL_URL_WEB_APP_GAS_DI_SINI";
+
+  let scanner = null;
+  let busy = false;
+  const statusEl = document.getElementById("status");
+  const codeEl = document.getElementById("code");
+  const resultEl = document.getElementById("result");
+  const detailsEl = document.getElementById("details");
+  const startBtn = document.getElementById("startBtn");
+  const searchBtn = document.getElementById("searchBtn");
+
+  function setStatus(message, type) {
+    statusEl.textContent = message;
+    statusEl.className = type || "";
+  }
+
+  function cleanCode(value) {
+    return String(value || "").replace(/\s+/g, "").trim();
+  }
+
+  async function startScanner() {
+    if (!window.isSecureContext || location.protocol !== "https:") {
+      setStatus("Kamera memerlukan HTTPS. Pastikan Anda membuka alamat GitHub Pages yang diawali https://.", "error");
+      return;
+    }
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      setStatus("Browser tidak menyediakan akses kamera. Gunakan Chrome Android terbaru dan pastikan izin kamera perangkat aktif.", "error");
+      return;
+    }
+    if (typeof Html5Qrcode === "undefined") {
+      setStatus("Modul pemindai QR gagal dimuat. Periksa koneksi internet lalu muat ulang halaman.", "error");
+      return;
+    }
+
+    startBtn.disabled = true;
+    try {
+      await stopScanner(false);
+      scanner = new Html5Qrcode("reader");
+      // Minta kamera belakang secara langsung; bila gagal, tampilkan pesan izin/perangkat.
+      await scanner.start(
+        { facingMode: "environment" },
+        { fps: 10, qrbox: { width: 240, height: 240 }, aspectRatio: 1.0 },
+        async decodedText => {
+          if (busy) return;
+          codeEl.value = cleanCode(decodedText);
+          await stopScanner(false);
+          await lookup();
+        },
+        () => {}
+      );
+      setStatus("Kamera aktif. Arahkan QR barang ke area pemindai.", "ok");
+    } catch (err) {
+      const msg = err && err.message ? err.message : String(err);
+      setStatus("Kamera gagal dibuka: " + msg +
+        "\n\nPeriksa: (1) izin Kamera untuk situs GitHub Pages di Chrome, (2) izin Kamera untuk Chrome di Pengaturan Android, (3) tutup aplikasi lain yang sedang memakai kamera, lalu muat ulang halaman.", "error");
+      await stopScanner(false);
+    } finally {
+      startBtn.disabled = false;
+    }
+  }
+
+  async function stopScanner(showMessage = true) {
+    if (scanner) {
+      try { if (scanner.isScanning) await scanner.stop(); } catch (e) {}
+      try { await scanner.clear(); } catch (e) {}
+      scanner = null;
+    }
+    if (showMessage) setStatus("Kamera dihentikan.");
+  }
+
+  function jsonp(url) {
+    return new Promise((resolve, reject) => {
+      const callbackName = "qrCallback_" + Date.now() + "_" + Math.floor(Math.random() * 1000000);
+      const script = document.createElement("script");
+      const timeout = setTimeout(() => {
+        cleanup();
+        reject(new Error("Waktu tunggu habis. Periksa URL /exec, deployment Apps Script, dan koneksi internet."));
+      }, 20000);
+
+      function cleanup() {
+        clearTimeout(timeout);
+        try { delete window[callbackName]; } catch (e) { window[callbackName] = undefined; }
+        if (script.parentNode) script.parentNode.removeChild(script);
+      }
+
+      window[callbackName] = data => { cleanup(); resolve(data); };
+      script.onerror = () => {
+        cleanup();
+        reject(new Error("Tidak dapat menghubungi Google Apps Script. Pastikan URL Web App benar dan akses deployment sesuai petunjuk."));
+      };
+      script.src = url + (url.includes("?") ? "&" : "?") + "callback=" + encodeURIComponent(callbackName);
+      document.head.appendChild(script);
+    });
+  }
+
+  async function lookup() {
+    if (busy) return;
+    const code = cleanCode(codeEl.value);
+    if (!/^\d{29}$/.test(code)) {
+      setStatus("Kode Label Barang harus tepat 29 digit angka.", "error");
+      codeEl.focus();
+      return;
+    }
+    if (!GAS_API_URL.startsWith("https://script.google.com/macros/s/") || !GAS_API_URL.endsWith("/exec")) {
+      setStatus("URL Web App belum diatur. Edit index.html dan isi GAS_API_URL dengan URL deployment Apps Script yang berakhiran /exec.", "error");
+      return;
+    }
+
+    busy = true;
+    searchBtn.disabled = true;
+    resultEl.hidden = true;
+    setStatus("Mencari data barang pada Google Spreadsheet...", "");
+    try {
+      const endpoint = GAS_API_URL + "?api=inventory&code=" + encodeURIComponent(code);
+      const response = await jsonp(endpoint);
+      if (!response || !response.success) {
+        throw new Error(response && response.message ? response.message : "Data barang tidak ditemukan.");
+      }
+      renderDetails(response.data || {});
+      setStatus("Data barang ditemukan. Rincian inventaris ditampilkan di bawah.", "ok");
+    } catch (err) {
+      setStatus(err && err.message ? err.message : String(err), "error");
+    } finally {
+      busy = false;
+      searchBtn.disabled = false;
+    }
+  }
+
+  function renderDetails(data) {
+    detailsEl.replaceChildren();
+    const preferred = [
+      "Kode Label Barang","Uraian","Nama Barang","Spesifikasi","Merk Barang","Type Barang",
+      "Nama Lembaga","Tahun Pendapatan","Nama Gedung","Nama Ruang","Nama Fakultas",
+      "Nama Unit","Nama Penanggung Jawab","Nama Fungsi","Nama Pendanaan",
+      "Nomor Urut Barang","Tanggal Input"
+    ];
+    const keys = [...preferred.filter(k => Object.prototype.hasOwnProperty.call(data, k)),
+      ...Object.keys(data).filter(k => !preferred.includes(k) && !/^link foto barang$/i.test(k))];
+
+    keys.forEach(key => {
+      const value = data[key];
+      if (value === null || value === undefined || String(value).trim() === "") return;
+      const box = document.createElement("div");
+      box.className = "field";
+      const label = document.createElement("small");
+      label.textContent = key;
+      const strong = document.createElement("strong");
+      strong.textContent = String(value);
+      box.append(label, strong);
+      detailsEl.appendChild(box);
+    });
+
+    const photoUrl = String(data["Link Foto Barang"] || "").trim();
+    if (photoUrl) {
+      const box = document.createElement("div");
+      box.className = "field";
+      const label = document.createElement("small");
+      label.textContent = "Foto Barang";
+      box.appendChild(label);
+      const link = document.createElement("a");
+      link.href = photoUrl;
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      link.textContent = "Buka foto barang";
+      box.appendChild(link);
+      detailsEl.appendChild(box);
+    }
+    resultEl.hidden = false;
+    resultEl.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  startBtn.addEventListener("click", startScanner);
+  document.getElementById("stopBtn").addEventListener("click", () => stopScanner(true));
+  searchBtn.addEventListener("click", lookup);
+  codeEl.addEventListener("input", () => { codeEl.value = codeEl.value.replace(/\D/g, "").slice(0, 29); });
+  codeEl.addEventListener("keydown", event => { if (event.key === "Enter") lookup(); });
+</script>
+</body>
+</html>
