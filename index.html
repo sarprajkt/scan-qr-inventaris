@@ -27,8 +27,13 @@
     input{width:100%;padding:15px;border-radius:11px;border:1px solid var(--line);background:var(--panel2);color:#fff;font-size:16px;outline:none}
     input:focus{border-color:var(--cyan);box-shadow:0 0 0 3px #00c6ce22}
     .search-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:9px}
-    #reader{width:min(100%,520px);margin:16px auto 6px;border-radius:13px;overflow:hidden;background:#fff;min-height:0}
-    #reader:empty{display:none}
+    /* Area kamera: disembunyikan sebelum pemindaian, ditampilkan saat kamera dimulai. */
+    #reader{display:none;width:min(100%,520px);min-height:260px;margin:16px auto 6px;border-radius:13px;overflow:hidden;background:#000;border:1px solid var(--line)}
+    #reader.scanning{display:block}
+    #reader video{display:block!important;width:100%!important;height:auto!important;min-height:260px;max-height: min(62vh,520px);object-fit:cover;background:#000}
+    #reader canvas{max-width:100%}
+    #reader__scan_region{min-height:240px;background:#000}
+    #reader__dashboard{padding:8px;color:#172544;background:#fff}
     #status{margin-top:14px;padding:13px 14px;border-radius:11px;background:#14233f;color:#dce8ff;white-space:pre-wrap;line-height:1.5;overflow-wrap:anywhere}
     #status.error{color:#ff858b;border:1px solid #a83f50}
     #status.ok{color:#77e7bb;border:1px solid #287d68}
@@ -89,6 +94,7 @@
   const codeEl = document.getElementById("code");
   const resultEl = document.getElementById("result");
   const detailsEl = document.getElementById("details");
+  const readerEl = document.getElementById("reader");
   const startBtn = document.getElementById("startBtn");
   const searchBtn = document.getElementById("searchBtn");
 
@@ -118,7 +124,12 @@
     startBtn.disabled = true;
     try {
       await stopScanner(false);
-      scanner = new Html5Qrcode("reader");
+      // Tampilkan wadah video SEBELUM library memulai kamera.
+      // Jika elemen masih display:none, beberapa browser Android tidak merender preview.
+      readerEl.classList.add("scanning");
+      readerEl.style.display = "block";
+      readerEl.innerHTML = "";
+      scanner = new Html5Qrcode("reader", { verbose: false });
       // Minta kamera belakang secara langsung; bila gagal, tampilkan pesan izin/perangkat.
       await scanner.start(
         { facingMode: "environment" },
@@ -147,6 +158,12 @@
       try { if (scanner.isScanning) await scanner.stop(); } catch (e) {}
       try { await scanner.clear(); } catch (e) {}
       scanner = null;
+    }
+    // Bersihkan preview dan sembunyikan area kamera setelah pemindaian dihentikan.
+    if (readerEl) {
+      readerEl.classList.remove("scanning");
+      readerEl.style.display = "none";
+      readerEl.innerHTML = "";
     }
     if (showMessage) setStatus("Kamera dihentikan.");
   }
