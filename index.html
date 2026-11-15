@@ -30,9 +30,9 @@
     /* Area kamera: disembunyikan sebelum pemindaian, ditampilkan saat kamera dimulai. */
     #reader{display:none;width:min(100%,520px);min-height:260px;margin:16px auto 6px;border-radius:13px;overflow:hidden;background:#000;border:1px solid var(--line)}
     #reader.scanning{display:block}
-    #reader video{display:block!important;width:100%!important;height:auto!important;min-height:260px;max-height: min(62vh,520px);object-fit:cover;background:#000}
+    #reader video{display:block!important;width:100%!important;height:auto!important;min-height:0!important;max-height:min(62vh,520px);aspect-ratio:4/3;object-fit:contain;background:#000}
     #reader canvas{max-width:100%}
-    #reader__scan_region{min-height:240px;background:#000}
+    #reader__scan_region{min-height:0;background:#000}
     #reader__dashboard{padding:8px;color:#172544;background:#fff}
     #status{margin-top:14px;padding:13px 14px;border-radius:11px;background:#14233f;color:#dce8ff;white-space:pre-wrap;line-height:1.5;overflow-wrap:anywhere}
     #status.error{color:#ff858b;border:1px solid #a83f50}
@@ -124,15 +124,32 @@
     startBtn.disabled = true;
     try {
       await stopScanner(false);
-      // Tampilkan wadah video SEBELUM library memulai kamera.
-      // Jika elemen masih display:none, beberapa browser Android tidak merender preview.
       readerEl.classList.add("scanning");
       readerEl.style.display = "block";
       readerEl.innerHTML = "";
-      scanner = new Html5Qrcode("reader", { verbose: false });
-      // Minta kamera belakang secara langsung; bila gagal, tampilkan pesan izin/perangkat.
+
+      scanner = new Html5Qrcode("reader", { verbose: true });
+
+      // Dapatkan daftar kamera setelah izin diberikan. Pada Android, label kamera
+      // biasanya baru terbaca setelah permission kamera disetujui.
+      let cameras = [];
+      try {
+        cameras = await Html5Qrcode.getCameras();
+      } catch (cameraListError) {
+        console.warn("Tidak dapat membaca daftar kamera:", cameraListError);
+      }
+
+      const backCamera = cameras.find(camera =>
+        /back|rear|environment|belakang/i.test(camera.label || "")
+      );
+      const selectedCamera = backCamera || cameras[cameras.length - 1];
+
+      const cameraConfig = selectedCamera
+        ? selectedCamera.id
+        : { facingMode: "environment" };
+
       await scanner.start(
-        { facingMode: "environment" },
+        cameraConfig,
         { fps: 10, qrbox: { width: 240, height: 240 }, aspectRatio: 1.0 },
         async decodedText => {
           if (busy) return;
@@ -142,11 +159,45 @@
         },
         () => {}
       );
-      setStatus("Kamera aktif. Arahkan QR barang ke area pemindai.", "ok");
+
+      // Paksa elemen video menjalankan playback inline pada Chrome Android.
+      const cameraVideo = readerEl.querySelector("video");
+      if (cameraVideo) {
+        cameraVideo.setAttribute("playsinline", "true");
+        cameraVideo.setAttribute("webkit-playsinline", "true");
+        cameraVideo.setAttribute("autoplay", "true");
+        cameraVideo.setAttribute("muted", "true");
+        cameraVideo.muted = true;
+        cameraVideo.controls = false;
+        cameraVideo.style.display = "block";
+        cameraVideo.style.width = "100%";
+        cameraVideo.style.height = "auto";
+        try {
+          await cameraVideo.play();
+        } catch (playError) {
+          console.warn("Video preview belum dapat diputar:", playError);
+        }
+      }
+
+      // Beri waktu singkat bagi browser untuk menerima frame pertama.
+      await new Promise(resolve => setTimeout(resolve, 900));
+
+      const videoNow = readerEl.querySelector("video");
+      if (!videoNow || videoNow.readyState < 2 || videoNow.videoWidth === 0) {
+        setStatus(
+          "Izin kamera berhasil, tetapi Chrome belum menerima gambar video. Tutup aplikasi Kamera lain, pastikan lensa tidak tertutup, lalu tekan Hentikan Kamera dan Mulai Scan QR kembali. Jika tetap hitam, coba muat halaman melalui Chrome biasa (bukan browser dalam aplikasi).",
+          "error"
+        );
+      } else {
+        setStatus(
+          "Kamera belakang aktif dan gambar sudah diterima. Arahkan QR barang ke area pemindai.",
+          "ok"
+        );
+      }
     } catch (err) {
       const msg = err && err.message ? err.message : String(err);
       setStatus("Kamera gagal dibuka: " + msg +
-        "\n\nPeriksa: (1) izin Kamera untuk situs GitHub Pages di Chrome, (2) izin Kamera untuk Chrome di Pengaturan Android, (3) tutup aplikasi lain yang sedang memakai kamera, lalu muat ulang halaman.", "error");
+        "\n\nPeriksa izin Kamera untuk situs GitHub Pages dan izin Kamera untuk Chrome di Pengaturan Android. Tutup aplikasi lain yang sedang memakai kamera, lalu coba kembali.", "error");
       await stopScanner(false);
     } finally {
       startBtn.disabled = false;
