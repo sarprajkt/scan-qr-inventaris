@@ -27,13 +27,8 @@
     input{width:100%;padding:15px;border-radius:11px;border:1px solid var(--line);background:var(--panel2);color:#fff;font-size:16px;outline:none}
     input:focus{border-color:var(--cyan);box-shadow:0 0 0 3px #00c6ce22}
     .search-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:9px}
-    /* Area kamera: disembunyikan sebelum pemindaian, ditampilkan saat kamera dimulai. */
-    #reader{display:none;width:min(100%,520px);min-height:260px;margin:16px auto 6px;border-radius:13px;overflow:hidden;background:#000;border:1px solid var(--line)}
-    #reader.scanning{display:block}
-    #reader video{display:block!important;width:100%!important;height:auto!important;min-height:0!important;max-height:min(62vh,520px);aspect-ratio:4/3;object-fit:contain;background:#000}
-    #reader canvas{max-width:100%}
-    #reader__scan_region{min-height:0;background:#000}
-    #reader__dashboard{padding:8px;color:#172544;background:#fff}
+    #reader{width:min(100%,520px);margin:16px auto 6px;border-radius:13px;overflow:hidden;background:#fff;min-height:0}
+    #reader:empty{display:none}
     #status{margin-top:14px;padding:13px 14px;border-radius:11px;background:#14233f;color:#dce8ff;white-space:pre-wrap;line-height:1.5;overflow-wrap:anywhere}
     #status.error{color:#ff858b;border:1px solid #a83f50}
     #status.ok{color:#77e7bb;border:1px solid #287d68}
@@ -86,7 +81,7 @@
 
 <script>
   // WAJIB DIISI dengan URL Web App Google Apps Script yang berakhiran /exec.
-  const GAS_API_URL = 'https://script.google.com/macros/s/AKfycbw7KFANkaSQSO6qP147Uxf7rICYTMc36Yi1xzS16vnfUa-xIjwcuVbPMUzSdX19HHNP/exec';
+  const GAS_API_URL = "TEMPEL_URL_WEB_APP_GAS_DI_SINI";
 
   let scanner = null;
   let busy = false;
@@ -94,7 +89,6 @@
   const codeEl = document.getElementById("code");
   const resultEl = document.getElementById("result");
   const detailsEl = document.getElementById("details");
-  const readerEl = document.getElementById("reader");
   const startBtn = document.getElementById("startBtn");
   const searchBtn = document.getElementById("searchBtn");
 
@@ -124,32 +118,10 @@
     startBtn.disabled = true;
     try {
       await stopScanner(false);
-      readerEl.classList.add("scanning");
-      readerEl.style.display = "block";
-      readerEl.innerHTML = "";
-
-      scanner = new Html5Qrcode("reader", { verbose: true });
-
-      // Dapatkan daftar kamera setelah izin diberikan. Pada Android, label kamera
-      // biasanya baru terbaca setelah permission kamera disetujui.
-      let cameras = [];
-      try {
-        cameras = await Html5Qrcode.getCameras();
-      } catch (cameraListError) {
-        console.warn("Tidak dapat membaca daftar kamera:", cameraListError);
-      }
-
-      const backCamera = cameras.find(camera =>
-        /back|rear|environment|belakang/i.test(camera.label || "")
-      );
-      const selectedCamera = backCamera || cameras[cameras.length - 1];
-
-      const cameraConfig = selectedCamera
-        ? selectedCamera.id
-        : { facingMode: "environment" };
-
+      scanner = new Html5Qrcode("reader");
+      // Minta kamera belakang secara langsung; bila gagal, tampilkan pesan izin/perangkat.
       await scanner.start(
-        cameraConfig,
+        { facingMode: "environment" },
         { fps: 10, qrbox: { width: 240, height: 240 }, aspectRatio: 1.0 },
         async decodedText => {
           if (busy) return;
@@ -159,45 +131,11 @@
         },
         () => {}
       );
-
-      // Paksa elemen video menjalankan playback inline pada Chrome Android.
-      const cameraVideo = readerEl.querySelector("video");
-      if (cameraVideo) {
-        cameraVideo.setAttribute("playsinline", "true");
-        cameraVideo.setAttribute("webkit-playsinline", "true");
-        cameraVideo.setAttribute("autoplay", "true");
-        cameraVideo.setAttribute("muted", "true");
-        cameraVideo.muted = true;
-        cameraVideo.controls = false;
-        cameraVideo.style.display = "block";
-        cameraVideo.style.width = "100%";
-        cameraVideo.style.height = "auto";
-        try {
-          await cameraVideo.play();
-        } catch (playError) {
-          console.warn("Video preview belum dapat diputar:", playError);
-        }
-      }
-
-      // Beri waktu singkat bagi browser untuk menerima frame pertama.
-      await new Promise(resolve => setTimeout(resolve, 900));
-
-      const videoNow = readerEl.querySelector("video");
-      if (!videoNow || videoNow.readyState < 2 || videoNow.videoWidth === 0) {
-        setStatus(
-          "Izin kamera berhasil, tetapi Chrome belum menerima gambar video. Tutup aplikasi Kamera lain, pastikan lensa tidak tertutup, lalu tekan Hentikan Kamera dan Mulai Scan QR kembali. Jika tetap hitam, coba muat halaman melalui Chrome biasa (bukan browser dalam aplikasi).",
-          "error"
-        );
-      } else {
-        setStatus(
-          "Kamera belakang aktif dan gambar sudah diterima. Arahkan QR barang ke area pemindai.",
-          "ok"
-        );
-      }
+      setStatus("Kamera aktif. Arahkan QR barang ke area pemindai.", "ok");
     } catch (err) {
       const msg = err && err.message ? err.message : String(err);
       setStatus("Kamera gagal dibuka: " + msg +
-        "\n\nPeriksa izin Kamera untuk situs GitHub Pages dan izin Kamera untuk Chrome di Pengaturan Android. Tutup aplikasi lain yang sedang memakai kamera, lalu coba kembali.", "error");
+        "\n\nPeriksa: (1) izin Kamera untuk situs GitHub Pages di Chrome, (2) izin Kamera untuk Chrome di Pengaturan Android, (3) tutup aplikasi lain yang sedang memakai kamera, lalu muat ulang halaman.", "error");
       await stopScanner(false);
     } finally {
       startBtn.disabled = false;
@@ -209,12 +147,6 @@
       try { if (scanner.isScanning) await scanner.stop(); } catch (e) {}
       try { await scanner.clear(); } catch (e) {}
       scanner = null;
-    }
-    // Bersihkan preview dan sembunyikan area kamera setelah pemindaian dihentikan.
-    if (readerEl) {
-      readerEl.classList.remove("scanning");
-      readerEl.style.display = "none";
-      readerEl.innerHTML = "";
     }
     if (showMessage) setStatus("Kamera dihentikan.");
   }
@@ -279,22 +211,43 @@
 
   function renderDetails(data) {
     detailsEl.replaceChildren();
+    // Nama field pada tampilan dibuat lebih mudah dipahami, sementara
+    // sumber datanya tetap menggunakan nama kolom dari Google Spreadsheet.
     const preferred = [
-      "Kode Label Barang","Uraian","Nama Barang","Spesifikasi","Merk Barang","Type Barang",
-      "Nama Lembaga","Tahun Pendapatan","Nama Gedung","Nama Ruang","Nama Fakultas",
-      "Nama Unit","Nama Penanggung Jawab","Nama Fungsi","Nama Pendanaan",
-      "Nomor Urut Barang","Tanggal Input"
+      ["Kode Label Barang", "Kode Label Barang"],
+      ["Uraian", "Uraian"],
+      ["Nama Barang", "Nama Barang"],
+      ["Serial Number", "Nomor Seri"],
+      ["Type Barang", "Type / Model"],
+      ["Spesifikasi", "Spesifikasi"],
+      ["Merk Barang", "Merk Barang"],
+      ["Nama Lembaga", "Nama Lembaga"],
+      ["Tahun Pendapatan", "Tahun Pendapatan"],
+      ["Nama Gedung", "Nama Gedung"],
+      ["Nama Ruang", "Nama Ruang"],
+      ["Nama Fakultas", "Nama Fakultas"],
+      ["Nama Unit", "Nama Unit"],
+      ["Nama Penanggung Jawab", "Nama Penanggung Jawab"],
+      ["Nama Fungsi", "Nama Fungsi"],
+      ["Nama Pendanaan", "Nama Pendanaan"],
+      ["Nomor Urut Barang", "Nomor Urut Barang"],
+      ["Tanggal Input", "Tanggal Input"]
     ];
-    const keys = [...preferred.filter(k => Object.prototype.hasOwnProperty.call(data, k)),
-      ...Object.keys(data).filter(k => !preferred.includes(k) && !/^link foto barang$/i.test(k))];
+    const shownKeys = new Set(preferred.map(([key]) => key));
+    const fields = preferred
+      .filter(([key]) => Object.prototype.hasOwnProperty.call(data, key))
+      .map(([key, label]) => [key, label]);
+    Object.keys(data)
+      .filter(key => !shownKeys.has(key) && !/^link foto barang$/i.test(key))
+      .forEach(key => fields.push([key, key]));
 
-    keys.forEach(key => {
+    fields.forEach(([key, displayLabel]) => {
       const value = data[key];
       if (value === null || value === undefined || String(value).trim() === "") return;
       const box = document.createElement("div");
       box.className = "field";
       const label = document.createElement("small");
-      label.textContent = key;
+      label.textContent = displayLabel;
       const strong = document.createElement("strong");
       strong.textContent = String(value);
       box.append(label, strong);
